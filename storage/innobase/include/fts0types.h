@@ -101,7 +101,6 @@ struct fts_sync_t {
 					documents to the FTS cache */
 	ulint		upper_index;	/*!< max index of the doc id vector to
 					add to the FTS cache */
-	ibool		interrupted;	/*!< TRUE if SYNC was interrupted */
 	doc_id_t	min_doc_id;	/*!< The smallest doc id added to the
 					cache. It should equal to
 					doc_ids[lower_index] */
@@ -110,11 +109,6 @@ struct fts_sync_t {
 					set the upper_limit field */
 	time_t		start_time;	/*!< SYNC start time; only used if
 					fts_enable_diag_print */
-	bool		in_progress;	/*!< flag whether sync is in progress.*/
-	bool		unlock_cache;	/*!< flag whether unlock cache when
-					write fts node */
-  /** condition variable for in_progress; used with table->fts->cache->lock */
-  pthread_cond_t cond;
 };
 
 /** The cache for the FTS system. It is a memory-based inverted index
@@ -204,7 +198,6 @@ struct fts_node_t {
 	ulint		ilist_size_alloc;
 					/*!< Allocated size of ilist in
 					bytes */
-	bool		synced;		/*!< flag whether the node is synced */
 };
 
 /** A tokenizer word. Contains information about one word. */
