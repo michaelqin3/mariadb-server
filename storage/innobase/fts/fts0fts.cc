@@ -4146,7 +4146,7 @@ dberr_t fts_sync_table(dict_table_t* table)
   ut_ad(table->fts);
 
   return table->space && !table->corrupted && table->fts->cache
-    ? fts_sync(table->fts->cache->sync, !wait, wait)
+    ? fts_sync(table->fts->cache->sync)
     : DB_SUCCESS;
 }
 
