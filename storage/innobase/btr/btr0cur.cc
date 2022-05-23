@@ -4755,18 +4755,19 @@ If, in a split, a new supremum record was created as the predecessor of the
 updated record, the supremum record must inherit exactly the locks on the
 updated record. In the split it may have inherited locks from the successor
 of the updated record, which is not correct. This function restores the
-right locks for the new supremum. */
+right locks for the new supremum.
+@param	cursor	cursor of the index record
+@param	rec	updated record
+@param	mtr	mini-transaction */
 static
 dberr_t
 btr_cur_pess_upd_restore_supremum(
-/*==============================*/
-	buf_block_t*	block,	/*!< in: buffer block of rec */
-	const rec_t*	rec,	/*!< in: updated record */
-	mtr_t*		mtr)	/*!< in: mtr */
+	btr_cur_t*	cursor,
+	const rec_t*	rec,
+	mtr_t*		mtr)
 {
-	page_t*		page;
-
-	page = buf_block_get_frame(block);
+	buf_block_t*	block = btr_cur_get_block(cursor);
+	page_t*		page = buf_block_get_frame(block);
 
 	if (page_rec_get_next(page_get_infimum_rec(page)) != rec) {
 		/* Updated record is not the first user record on its page */
@@ -4779,8 +4780,9 @@ btr_cur_pess_upd_restore_supremum(
 	const page_id_t	prev_id(block_id.space(), prev_page_no);
 	dberr_t err;
 	buf_block_t* prev_block
-		= buf_page_get_gen(prev_id, 0, RW_NO_LATCH, nullptr,
-				   BUF_GET_POSSIBLY_FREED, mtr, &err);
+		= buf_page_get_gen(prev_id, cursor->index->table->space->zip_size(),
+				   RW_NO_LATCH, nullptr, BUF_GET_POSSIBLY_FREED,
+				   mtr, &err);
 	/* Since we already held an x-latch on prev_block, it must
 	be available and not be corrupted unless the buffer pool got
 	corrupted somehow. */
@@ -5240,8 +5242,7 @@ btr_cur_pessimistic_update(
 	from a wrong record. */
 
 	if (!was_first) {
-		err = btr_cur_pess_upd_restore_supremum(
-			btr_cur_get_block(cursor), rec, mtr);
+		err = btr_cur_pess_upd_restore_supremum(cursor, rec, mtr);
 	}
 
 return_after_reservations:
