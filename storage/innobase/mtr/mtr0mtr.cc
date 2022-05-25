@@ -354,6 +354,18 @@ struct DebugCheck {
 		return(true);
 	}
 };
+
+inline void mtr_t::page_checksum(const buf_block_t &block)
+{
+  if (UNIV_LIKELY_NULL(block.page.zip.data))
+    return; /* FIXME: support ROW_FORMAT=COMPRESSED */
+  byte *l= log_write<OPTION>(block.page.id(), nullptr, 5, true, 0);
+  *l++= OPT_PAGE_CHECKSUM;
+  mach_write_to_4(l, my_crc32c(my_crc32c(0, block.frame, FIL_PAGE_LSN),
+                               block.frame + (FIL_PAGE_LSN + 8),
+                               srv_page_size - (FIL_PAGE_LSN + 8)));
+  m_log.close(l + 4);
+}
 #endif
 
 /** Release page latches held by the mini-transaction. */
@@ -361,21 +373,20 @@ struct ReleaseBlocks
 {
   const lsn_t start, end;
 #ifdef UNIV_DEBUG
-  const mtr_buf_t &memo;
-
-  ReleaseBlocks(lsn_t start, lsn_t end, const mtr_buf_t &memo) :
-    start(start), end(end), memo(memo)
-#else /* UNIV_DEBUG */
-  ReleaseBlocks(lsn_t start, lsn_t end, const mtr_buf_t&) :
-    start(start), end(end)
-#endif /* UNIV_DEBUG */
+  mtr_t *mtr;
+  ReleaseBlocks(lsn_t start, lsn_t end, mtr_t *mtr) :
+    start(start), end(end), mtr(mtr)
   {
     ut_ad(start);
     ut_ad(end);
+    ut_ad(!mtr || mtr->get_log_size() == 0);
   }
+#else /* UNIV_DEBUG */
+  ReleaseBlocks(lsn_t start, lsn_t end, mtr_t*) : start(start), end(end) {}
+#endif /* UNIV_DEBUG */
 
   /** @return true always */
-  bool operator()(mtr_memo_slot_t* slot) const
+  bool operator()(mtr_memo_slot_t *slot) const
   {
     if (!slot->object)
       return true;
@@ -388,8 +399,9 @@ struct ReleaseBlocks
       return true;
     }
 
-    buf_flush_note_modification(static_cast<buf_block_t*>(slot->object),
-                                start, end);
+    buf_block_t *block= static_cast<buf_block_t*>(slot->object);
+    buf_flush_note_modification(block, start, end);
+    ut_d(if (mtr) mtr->page_checksum(*block));
     return true;
   }
 };
@@ -492,11 +504,23 @@ void mtr_t::commit()
     else
       ut_ad(!m_freed_space);
 
-    m_memo.for_each_block_in_reverse(CIterate<const ReleaseBlocks>
-                                     (ReleaseBlocks(lsns.first, m_commit_lsn,
-                                                    m_memo)));
+    ut_d(m_log.erase());
+    m_memo.for_each_block_in_reverse
+      (CIterate<const ReleaseBlocks>
+       (ReleaseBlocks(lsns.first, m_commit_lsn,
+                      ut_d(m_made_dirty && m_log_mode == MTR_LOG_ALL? this :)
+                      nullptr)));
     if (m_made_dirty)
+    {
       mysql_mutex_unlock(&log_sys.flush_order_mutex);
+#if 0 // FIXME: defined UNIV_DEBUG
+      if (m_log.size()) // write OPT_PAGE_CHECKSUM records
+      {
+        do_write();
+        mysql_mutex_unlock(&log_sys.mutex);
+      }
+#endif
+    }
 
     m_memo.for_each_block_in_reverse(CIterate<ReleaseLatches>());
 
@@ -586,6 +610,7 @@ void mtr_t::commit_shrink(fil_space_t &space)
   log_write_and_flush_prepare();
 
   const lsn_t start_lsn= do_write().first;
+  ut_d(m_log.erase());
 
   mysql_mutex_lock(&log_sys.flush_order_mutex);
   /* Durably write the reduced FSP_SIZE before truncating the data file. */
@@ -616,8 +641,15 @@ void mtr_t::commit_shrink(fil_space_t &space)
 
   m_memo.for_each_block_in_reverse(CIterate<const ReleaseBlocks>
                                    (ReleaseBlocks(start_lsn, m_commit_lsn,
-                                                  m_memo)));
+                                                  this)));
   mysql_mutex_unlock(&log_sys.flush_order_mutex);
+#if 0 // FIXME: defined UNIV_DEBUG
+  if (m_log.size()) // write OPT_PAGE_CHECKSUM records
+  {
+    do_write();
+    mysql_mutex_unlock(&log_sys.mutex);
+  }
+#endif
 
   mutex_enter(&fil_system.mutex);
   ut_ad(space.is_being_truncated);
@@ -1238,16 +1270,6 @@ mtr_t::memo_contains_page_flagged(
 	return m_memo.for_each_block_in_reverse(iteration)
 		? NULL : iteration.functor.get_block();
 }
-
-/** Print info of an mtr handle. */
-void
-mtr_t::print() const
-{
-	ib::info() << "Mini-transaction handle: memo size "
-		<< m_memo.size() << " bytes log size "
-		<< get_log()->size() << " bytes";
-}
-
 #endif /* UNIV_DEBUG */
 
 
