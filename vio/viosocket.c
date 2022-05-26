@@ -1062,21 +1062,24 @@ int vio_io_wait(Vio *vio, enum enum_vio_io_event event, int timeout)
   ret= select(0, &readfds, &writefds, &exceptfds, (timeout >= 0) ? &tm : NULL);
 
   END_SOCKET_WAIT(locker, timeout);
-
+sql_print_information("done select()");
   /* Set error code to indicate a timeout error. */
   if (ret == 0)
     WSASetLastError(SOCKET_ETIMEDOUT);
 
   if (FD_ISSET(pipe_fd, &readfds))
   {
+    sql_print_warning("received self-pipe interrupt");
     // Self-pipe trick fakes CancelIo
     ret= -1;
     WSASetLastError(SOCKET_EINTR);
   }
 
   /* Error or timeout? */
-  if (ret <= 0)
+  if (ret <= 0){
+    sql_print_information("vio_io_wait: error return: %d", ret);
     DBUG_RETURN(ret);
+  }
 
   /* The requested I/O event is ready? */
   switch (event)
