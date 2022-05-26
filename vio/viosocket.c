@@ -1077,7 +1077,7 @@ sql_print_information("done select()");
 
   /* Error or timeout? */
   if (ret <= 0){
-    sql_print_information("vio_io_wait: error return: %d", ret);
+    sql_print_warning("vio_io_wait: error return: %d", ret);
     DBUG_RETURN(ret);
   }
 
