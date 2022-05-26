@@ -87,12 +87,14 @@ IF(WITH_INNOBASE_STORAGE_ENGINE)
   ADD_DEPENDENCIES(innochecksum GenError)
 ENDIF()
 
-set(SQL_PARSER_SOURCES frm_parser.cc ${CMAKE_SOURCE_DIR}/sql/sql_class.cc)
+set(SQL_PARSER_SOURCES frm_parser.cc
+
+        ${PROJECT_SOURCE_DIR}/libmysqld/libmysql.c)
 
 MYSQL_ADD_EXECUTABLE(frm_parser ${SQL_PARSER_SOURCES})
-target_compile_definitions(frm_parser PUBLIC -DMYSQL_SERVER -DHAVE_EVENT_SCHEDULER)
+#target_compile_definitions(frm_parser PUBLIC -DMYSQL_SERVER -DHAVE_EVENT_SCHEDULER)
 TARGET_INCLUDE_DIRECTORIES(frm_parser PUBLIC ${CMAKE_SOURCE_DIR}/sql)
-TARGET_LINK_LIBRARIES(frm_parser mysys)
+TARGET_LINK_LIBRARIES(frm_parser mysys sql sql_builtins)
 
 MYSQL_ADD_EXECUTABLE(replace replace.c COMPONENT Client)
 TARGET_LINK_LIBRARIES(replace mysys)
